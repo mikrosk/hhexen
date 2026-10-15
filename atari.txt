@@ -1,0 +1,19 @@
+HHexen SDL port
+===============
+
+Latest HHexen release (1.6.4) linked against latest SDL-1.2 and SDL_mixer 1.2.
+
+This port uses FreeMiNT's https://github.com/freemint/m68k-atari-mint-gcc
+(gcc 13.4).
+
+The most important feature is availability of MIDI playback via Atari MIDI and
+working sound on the FireBee.
+
+Also read README.SDL because it provides useful info about video, audio and
+input drivers.
+
+Have fun!
+
+Miro Kropacek aka MiKRO / Mystic Bytes,
+30.09.2026,
+Brisbane / Australia

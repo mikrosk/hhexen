@@ -1,0 +1,83 @@
+# Cross-compiles HHexen for Atari FreeMiNT with the m68k-atari-mintelf
+# toolchain. Each CPU variant is configured and built in its own directory:
+#
+#   build-020/hexen020.gtp	68020-68060
+#   build-cf/hexen_cf.gtp	ColdFire V4e (FireBee)
+#
+#   make -f Makefile.atari		build both binaries
+#   make -f Makefile.atari <goals>	run <goals> in both build directories
+#   make -f Makefile.atari dist		build both binaries and package them
+#					as build-dist/hhexen.zip
+#   make -f Makefile.atari distclean	remove all build directories
+
+HOST		:= m68k-atari-mintelf
+CONFFLAGS	:= --host=$(HOST) --with-audio=sdlmixer --disable-userdirs --disable-gl \
+		  --enable-dossaves
+LDEXTRA		:= -s -Wl,--msuper-memory -Wl,--stack,256k
+PROGRAM		:= hhexen-sdl
+OBJDIRS		:= base sdl unix
+# keep __FILE__ relative to the source directory, as in an in-tree build
+CFLAGSEXTRA	:= -fmacro-prefix-map=../=
+
+CPUFLAGS_020	:= -m68020-60 -mfastcall
+CPUFLAGS_cf	:= -mcpu=5475 -mfastcall
+BINARY_020	:= hexen020.gtp
+BINARY_cf	:= hexen_cf.gtp
+
+BUILDS		:= 020 cf
+BUILDDIRS	:= $(BUILDS:%=build-%)
+
+DISTNAME	:= hhexen
+DISTDIR		:= build-dist
+DISTDOCS	:= AUTHORS ChangeLog LICENSE README RELEASE SAVEGAME TODO WADFILES
+README_SDL_URL	:= https://raw.githubusercontent.com/libsdl-org/SDL-1.2/main/README.MiNT
+
+# with VPATH, in-tree objects would be picked up instead of being rebuilt
+INTREE		:= $(wildcard config.status $(OBJDIRS:%=%/*.o))
+ifneq ($(INTREE),)
+ifneq ($(MAKECMDGOALS),distclean)
+$(error in-tree build files found ($(firstword $(INTREE)) ...), remove them first)
+endif
+endif
+
+SUBGOALS	:= $(filter-out all dist distclean,$(MAKECMDGOALS))
+NPROC		:= $(shell nproc)
+
+# $(PROGRAM) exists only right after a link, so other goals rename nothing
+define subbuild
+	$(MAKE) -j$(NPROC) -C build-$(1) $(SUBGOALS)
+	if [ -f build-$(1)/$(PROGRAM) ]; then mv -f build-$(1)/$(PROGRAM) build-$(1)/$(BINARY_$(1)); fi
+
+endef
+
+.PHONY: all dist distclean $(SUBGOALS)
+
+all: $(BUILDDIRS:%=%/Makefile)
+	$(foreach b,$(BUILDS),$(call subbuild,$(b)))
+
+ifneq ($(SUBGOALS),)
+$(SUBGOALS): all
+	@:
+endif
+
+# text files are shipped with CR/LF line endings
+dist: all
+	rm -rf $(DISTDIR)
+	mkdir -p $(DISTDIR)/$(DISTNAME)/doc
+	cp $(DISTDOCS) $(DISTDIR)/$(DISTNAME)/doc/
+	cp atari.txt $(DISTDIR)/$(DISTNAME)/
+	curl -fsSL -o $(DISTDIR)/$(DISTNAME)/README.SDL $(README_SDL_URL)
+	sed -i 's/\r*$$/\r/' $(DISTDIR)/$(DISTNAME)/doc/* $(DISTDIR)/$(DISTNAME)/atari.txt $(DISTDIR)/$(DISTNAME)/README.SDL
+	$(foreach b,$(BUILDS),cp build-$(b)/$(BINARY_$(b)) $(DISTDIR)/$(DISTNAME)/;)
+	cd $(DISTDIR) && zip -q -r -9 $(DISTNAME).zip $(DISTNAME)
+
+distclean:
+	rm -rf $(BUILDDIRS) $(DISTDIR)
+
+configure: configure.ac $(wildcard m4/*.m4)
+	./autogen.sh
+
+$(BUILDDIRS:%=%/Makefile): build-%/Makefile: configure Makefile.in
+	mkdir -p $(addprefix $(@D)/,$(OBJDIRS))
+	cd $(@D) && ../configure $(CONFFLAGS) \
+		CFLAGS='$(CPUFLAGS_$*) $(CFLAGSEXTRA)' LDFLAGS='$(CPUFLAGS_$*) $(LDEXTRA)'
